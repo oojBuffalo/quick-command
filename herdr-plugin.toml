@@ -1,0 +1,25 @@
+id = "ooj.quick-command"
+name = "Quick Command"
+version = "0.1.0"
+min_herdr_version = "0.9.5"
+description = "Type what you want in plain language; get the shell command at your prompt."
+platforms = ["macos", "linux"]
+
+[[build]]
+command = ["cargo", "build", "--release"]
+
+# Bind a key to this action (see README). It opens the box over the focused pane;
+# Herdr tells the box which pane that is.
+[[actions]]
+id = "open"
+title = "Quick command"
+contexts = ["pane"]
+command = ["sh", "-c", "exec \"${HERDR_BIN_PATH:-herdr}\" plugin pane open --plugin ooj.quick-command --entrypoint prompt"]
+
+[[panes]]
+id = "prompt"
+title = "Quick Command"
+placement = "popup"
+width = "60%"
+height = 4
+command = ["target/release/quick-command"]

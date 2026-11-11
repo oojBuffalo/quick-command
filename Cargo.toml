@@ -1,0 +1,12 @@
+[package]
+name = "quick-command"
+version = "0.1.0"
+edition = "2021"
+description = "Natural language to shell command popup for Herdr"
+
+[dependencies]
+crossterm = "0.28"
+serde_json = "1"
+
+[profile.release]
+strip = true
