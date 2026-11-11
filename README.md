@@ -83,8 +83,8 @@ Time from pressing Enter to the command appearing, measured on one Mac on 2026-1
 
 | Backend | Enter to command |
 |---|---|
-| `openrouter`, free `nvidia/nemotron-3.5-lightning:free` | about 0.5 s (one run) |
-| `claude` (Haiku) | about 2–4 s, median 2.3 s |
+| `openrouter`, free `nvidia/nemotron-3.5-lightning:free` | about 0.5–1 s (two runs) |
+| `claude` (Haiku) | about 1–4 s, typically about 2.3 s |
 | `grok` | about 7–10 s |
 | `codex` | about 11 s |
 
@@ -105,7 +105,7 @@ Your request, plus: operating system, shell name, the pane's working directory, 
 ## Safety
 
 - The command is typed at the prompt and never run for you.
-- Model output is reduced to a single line with every control character removed, so a reply cannot press Enter or send escape sequences. A reply with more than one line is refused.
+- Model output is reduced to a single line with every control character removed, so a reply cannot press Enter or send escape sequences. Zero-width and text-direction characters are removed too, so the line you read is the line the shell gets. A reply with more than one line is refused.
 - The agent CLIs are started with their tools switched off (`claude --tools ""`, `grok --tools "" --disable-web-search`, `codex --sandbox read-only`) and in an empty folder, so a request can only produce text.
 - The API key is handed to `curl` on stdin, not on its command line.
 

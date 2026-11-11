@@ -5,7 +5,8 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, DirBuilder, File};
+use std::os::unix::fs::DirBuilderExt;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -124,12 +125,25 @@ fn build_system(cwd: Option<&str>) -> String {
 
 // ---------------------------------------------------------------- output safety
 
+/// Characters that act on the terminal or change how text is shown without being seen:
+/// controls, zero-width characters, and the bidi overrides that can reorder a line.
+fn is_invisible(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{ad}' | '\u{61c}' | '\u{180e}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{206f}' | '\u{feff}' | '\u{fff9}'..='\u{fffb}' | '\u{e0000}'..='\u{e007f}')
+}
+
+/// Text with every kind of whitespace turned into a plain space and invisible characters removed.
+fn plain(text: &str) -> String {
+    text.chars().map(|c| if c.is_whitespace() { ' ' } else { c }).filter(|c| !is_invisible(*c)).collect()
+}
+
 /// Turns a model reply into one line that is safe to type into a terminal.
 ///
 /// This is the trust boundary: the result becomes keystrokes. Control characters
 /// (Enter, Escape, ...) are removed, and anything but a single line is refused.
 fn sanitize(raw: &str) -> Result<String, String> {
-    let all: Vec<&str> = raw.split(['\n', '\r']).map(str::trim).filter(|l| !l.is_empty()).collect();
+    let all: Vec<&str> = raw.split(['\n', '\r', '\u{85}', '\u{2028}', '\u{2029}']).map(str::trim).filter(|l| !l.is_empty()).collect();
     let lines: &[&str] = match all.iter().position(|l| l.starts_with("```")) {
         Some(open) => {
             let rest = &all[open + 1..];
@@ -146,7 +160,7 @@ fn sanitize(raw: &str) -> Result<String, String> {
     let line = line.strip_prefix("$ ").unwrap_or(line);
     let wrapped = line.len() > 1 && line.starts_with('`') && line.ends_with('`') && line.matches('`').count() == 2;
     let line = if wrapped { &line[1..line.len() - 1] } else { line };
-    let clean: String = line.chars().map(|c| if c == '\t' { ' ' } else { c }).filter(|c| !c.is_control()).collect();
+    let clean = plain(line);
     let clean = clean.trim();
     if clean.is_empty() {
         return Err("the model returned nothing".into());
@@ -205,7 +219,8 @@ fn preset(cfg: &Config, system: &str) -> Result<Preset, String> {
                 return Err("no API key: set OPENROUTER_API_KEY or QC_API_KEY".into());
             }
             // URL, key and body go in on stdin so the key never shows up in `ps`
-            (vec!["curl", "-sS", "--max-time", "20", "-K", "-"], Wire::Http)
+            // -q (must be first): ignore ~/.curlrc
+            (vec!["curl", "-q", "-sS", "--max-time", "20", "-K", "-"], Wire::Http)
         }
         "command" => {
             let cmd = cfg.command.as_deref().ok_or("QC_BACKEND=command needs QC_COMMAND")?;
@@ -228,10 +243,12 @@ fn preset(cfg: &Config, system: &str) -> Result<Preset, String> {
 
 /// Replaces the whole-argument placeholders `{prompt}` (rules + request) and `{request}`.
 fn fill(argv: &[String], full: &str, request: &str) -> Vec<String> {
+    // a leading space keeps text that starts with '-' from being read as a flag
+    let value = |s: &str| if s.starts_with('-') { format!(" {s}") } else { s.to_string() };
     argv.iter()
         .map(|a| match a.as_str() {
-            "{prompt}" => full.to_string(),
-            "{request}" => request.to_string(),
+            "{prompt}" => value(full),
+            "{request}" => value(request),
             _ => a.clone(),
         })
         .collect()
@@ -312,6 +329,21 @@ fn is_final(wire: Wire, line: &str) -> bool {
     wire == Wire::ClaudeJson && serde_json::from_str::<Value>(line).map_or(false, |v| v["type"] == "result")
 }
 
+/// Where backends run and their stderr is logged: Herdr's per-plugin state directory,
+/// else a private one under the home directory. Never a shared temp directory, where
+/// another user could plant a link at the log's path or files for an agent CLI to read.
+fn workdir_path(state: Option<String>, home: Option<String>) -> Option<PathBuf> {
+    let set = |v: Option<String>| v.filter(|s| !s.is_empty()).map(PathBuf::from);
+    set(state).or_else(|| set(home).map(|h| h.join(".local/state/quick-command")))
+}
+
+fn workdir() -> Result<PathBuf, String> {
+    let dir = workdir_path(env::var("HERDR_PLUGIN_STATE_DIR").ok(), env::var("HOME").ok())
+        .ok_or("no state directory: HOME is not set")?;
+    DirBuilder::new().recursive(true).mode(0o700).create(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    Ok(dir)
+}
+
 /// One request against one backend process.
 struct Runner {
     cfg: Config,
@@ -325,9 +357,11 @@ impl Runner {
     /// Builds the command and, when the request is delivered on stdin, starts the
     /// process right away so its startup overlaps with the user typing.
     fn new(cfg: Config, system: String) -> Result<Runner, String> {
+        Runner::in_dir(cfg, system, workdir()?)
+    }
+
+    fn in_dir(cfg: Config, system: String, workdir: PathBuf) -> Result<Runner, String> {
         let preset = preset(&cfg, &system)?;
-        // an empty directory: agent CLIs must not pick up a project's files or instructions
-        let workdir = env::var("HERDR_PLUGIN_STATE_DIR").map(PathBuf::from).unwrap_or_else(|_| env::temp_dir());
         let mut runner = Runner { cfg, system, preset, workdir, child: None };
         if !takes_request_in_argv(&runner.preset.argv) {
             runner.child = Some(runner.spawn("")?);
@@ -405,6 +439,13 @@ impl Runner {
             let _ = child.kill();
             let _ = child.wait();
         }
+    }
+}
+
+/// No exit path, including an early `?` return, may leave a backend process running.
+impl Drop for Runner {
+    fn drop(&mut self) {
+        self.kill();
     }
 }
 
@@ -597,7 +638,7 @@ fn ui(out: &mut impl Write, tgt: &Target) -> io::Result<Option<String>> {
                 edit(&mut input, &mut cursor, k.code, k.modifiers)
             }
             Event::Paste(text) if waiting.is_none() => {
-                for c in text.chars().filter(|c| !c.is_control()) {
+                for c in plain(&text).chars() {
                     input.insert(cursor, c);
                     cursor += 1;
                 }

@@ -54,6 +54,21 @@ fn sanitize_strips_control_characters() {
 }
 
 #[test]
+fn sanitize_strips_invisible_and_bidi_characters() {
+    // what the user reads at the prompt must be what the shell gets
+    assert_eq!(sanitize("g\u{200b}it sta\u{feff}tus").unwrap(), "git status");
+    assert_eq!(sanitize("ls \u{202e}gpj.txt\u{202c} -la\u{2066}\u{2069}").unwrap(), "ls gpj.txt -la");
+    // a no-break space would glue two words into one unknown command
+    assert_eq!(sanitize("ls\u{a0}-la").unwrap(), "ls -la");
+    // Unicode line breaks count as line breaks
+    assert!(sanitize("ls\u{2028}rm -rf /").is_err());
+    assert!(sanitize("ls\u{2029}rm -rf /").is_err());
+    assert!(sanitize("ls\u{85}rm -rf /").is_err());
+    // ordinary non-ASCII text stays
+    assert_eq!(sanitize("echo héllo 日本").unwrap(), "echo héllo 日本");
+}
+
+#[test]
 fn sanitize_rejects_multiple_lines_and_empty() {
     assert!(sanitize("ls\nrm -rf /").is_err());
     assert!(sanitize("ls\rrm -rf /").is_err());
@@ -104,6 +119,34 @@ fn fill_replaces_whole_tokens_only() {
     // a request that itself contains a placeholder must not be expanded again
     let out = fill(&argv, "FULL", "say {prompt}");
     assert_eq!(out, ["x", "FULL", "say {prompt}", "a{request}"]);
+    // a request that starts with '-' must not be read as a flag by the backend CLI
+    assert_eq!(fill(&argv[2..3], "F", "-rf old logs"), [" -rf old logs"]);
+}
+
+#[test]
+fn paste_keeps_words_apart() {
+    assert_eq!(plain("list git\nbranches\tnow\x1b"), "list git branches now");
+}
+
+#[test]
+fn workdir_is_never_a_shared_temp_directory() {
+    assert_eq!(workdir_path(Some("/s".into()), Some("/h".into())), Some(PathBuf::from("/s")));
+    assert_eq!(workdir_path(None, Some("/h".into())), Some(PathBuf::from("/h/.local/state/quick-command")));
+    assert_eq!(workdir_path(Some(String::new()), None), None);
+}
+
+#[test]
+fn dropping_a_runner_stops_its_process() {
+    let mut c = cfg("command");
+    c.command = Some("sleep 30".into());
+    let dir = env::temp_dir().join(format!("qc-test-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let runner = Runner::in_dir(c, "SYS".into(), dir.clone()).unwrap();
+    let pid = runner.child.as_ref().unwrap().id().to_string();
+    drop(runner);
+    let alive = Command::new("kill").args(["-0", &pid]).stderr(Stdio::null()).status().unwrap().success();
+    let _ = fs::remove_dir_all(&dir);
+    assert!(!alive, "backend process {pid} outlived its Runner");
 }
 
 #[test]
@@ -163,6 +206,8 @@ fn openrouter_preset_goes_through_curl_stdin() {
     let p = preset(&c, "S").unwrap();
     assert_eq!(p.wire, Wire::Http);
     assert_eq!(p.argv[0], "curl");
+    // -q must come first: it stops a ~/.curlrc from changing the request
+    assert_eq!(p.argv[1], "-q");
     // the key must never appear on the command line (visible in `ps`)
     assert!(!p.argv.iter().any(|a| a.contains("sk-secret")));
 
