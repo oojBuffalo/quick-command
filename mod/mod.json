@@ -1,0 +1,1 @@
+{ "place": "none", "title": "Quick Command", "overlay": { "kind": "popup", "at": "top", "offset": 120, "width": 560, "height": 98 } }

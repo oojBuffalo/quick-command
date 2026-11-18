@@ -1,6 +1,6 @@
 # Quick Command
 
-A Herdr plugin that turns plain language into a shell command, like ⌘K in Cursor's terminal.
+A Herdr extension that turns plain language into a shell command, like ⌘K in Cursor's terminal. It works in the Herdr desktop app and in the `herdr` terminal multiplexer.
 
 Press the key, type `list git branches`, press Enter. `git branch -a` appears at your shell prompt. It is typed, not run: you read it, edit it if needed, and press Enter yourself.
 
@@ -11,11 +11,36 @@ Press the key, type `list git branches`, press Enter. `git branch -a` appears at
 
 ## Install
 
-Needs Herdr 0.9.5 or later, a Rust toolchain, and the `claude` CLI (or another backend, below; the HTTP backend needs `curl`).
+Needs a Rust toolchain and the `claude` CLI (or another backend, below; the HTTP backend needs `curl`). There are two Herdr programs with different extension systems; install for the one you use.
 
 ```bash
 git clone <this repo> quick-command && cd quick-command
 cargo build --release
+```
+
+### Herdr desktop app (a mod)
+
+```bash
+mkdir ~/.config/herdr-app/mods/quick-command
+cp mod/mod.json mod/main.js target/release/quick-command ~/.config/herdr-app/mods/quick-command/
+herdr-app check ~/.config/herdr-app/mods/quick-command
+```
+
+Add the key to the `terminal` section of `~/.config/herdr-app/keys.json` (the app picks it up on save):
+
+```json
+"cmd-k": "mod.open:quick-command"
+```
+
+Once you edit `keys.json` the app treats the whole file as yours, so shortcuts added by later Herdr releases must be added by hand.
+
+The mod pastes the command through the clipboard, so the command replaces whatever you had copied. It also starts the backend only when you press Enter, so it is a little slower than the terminal plugin below.
+
+### `herdr` terminal multiplexer (a plugin)
+
+Needs `herdr` 0.9.5 or later.
+
+```bash
 herdr plugin link "$PWD"
 ```
 
@@ -39,7 +64,7 @@ If your terminal cannot pass ⌘K through, pick another key, for example `key = 
 
 ## Choose a backend
 
-Settings live in `config.env` inside the folder printed by `herdr plugin config-dir ooj.quick-command`. Environment variables with the same names override the file.
+Settings live in `config.env`: in `~/.config/quick-command/` for the desktop app, or in the folder printed by `herdr plugin config-dir ooj.quick-command` for the terminal plugin. Environment variables with the same names override the file.
 
 ```
 QC_BACKEND=openrouter
@@ -96,7 +121,7 @@ Time your own setup without Herdr:
 QC_BACKEND=claude target/release/quick-command --once "list git branches"
 ```
 
-The command goes to stdout and the elapsed milliseconds to stderr. `QC_TYPING_MS` (default 1500) is the pretend typing time during which the backend warms up.
+The command goes to stdout and the elapsed milliseconds to stderr. Set `QC_TYPING_MS=1500` to add pretend typing time during which the backend warms up, as it does in the terminal plugin's box.
 
 ## What is sent to the model
 

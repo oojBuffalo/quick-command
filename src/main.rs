@@ -26,6 +26,9 @@ mod tests;
 const DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
 const DEFAULT_HTTP_MODEL: &str = "anthropic/claude-haiku-5.5";
 const TIMEOUT: Duration = Duration::from_secs(20);
+// used when the `herdr` plugin host does not hand us its own folders
+const STATE_DIR: &str = ".local/state/quick-command";
+const CONFIG_DIR: &str = ".config/quick-command";
 
 // ---------------------------------------------------------------- config
 
@@ -72,9 +75,8 @@ fn load_config(file: &HashMap<String, String>, env: &dyn Fn(&str) -> Option<Stri
 }
 
 fn config() -> Config {
-    let file = env::var("HERDR_PLUGIN_CONFIG_DIR")
-        .ok()
-        .and_then(|d| fs::read_to_string(PathBuf::from(d).join("config.env")).ok())
+    let file = dir_or_home(env::var("HERDR_PLUGIN_CONFIG_DIR").ok(), env::var("HOME").ok(), CONFIG_DIR)
+        .and_then(|d| fs::read_to_string(d.join("config.env")).ok())
         .map(|t| parse_env(&t))
         .unwrap_or_default();
     load_config(&file, &|k| env::var(k).ok())
@@ -332,13 +334,13 @@ fn is_final(wire: Wire, line: &str) -> bool {
 /// Where backends run and their stderr is logged: Herdr's per-plugin state directory,
 /// else a private one under the home directory. Never a shared temp directory, where
 /// another user could plant a link at the log's path or files for an agent CLI to read.
-fn workdir_path(state: Option<String>, home: Option<String>) -> Option<PathBuf> {
+fn dir_or_home(herdr: Option<String>, home: Option<String>, under_home: &str) -> Option<PathBuf> {
     let set = |v: Option<String>| v.filter(|s| !s.is_empty()).map(PathBuf::from);
-    set(state).or_else(|| set(home).map(|h| h.join(".local/state/quick-command")))
+    set(herdr).or_else(|| set(home).map(|h| h.join(under_home)))
 }
 
 fn workdir() -> Result<PathBuf, String> {
-    let dir = workdir_path(env::var("HERDR_PLUGIN_STATE_DIR").ok(), env::var("HOME").ok())
+    let dir = dir_or_home(env::var("HERDR_PLUGIN_STATE_DIR").ok(), env::var("HOME").ok(), STATE_DIR)
         .ok_or("no state directory: HOME is not set")?;
     DirBuilder::new().recursive(true).mode(0o700).create(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     Ok(dir)
@@ -710,12 +712,12 @@ fn popup() -> i32 {
 // ---------------------------------------------------------------- --once
 
 /// One request without the box: prints the command, and the time from "Enter" to
-/// answer on stderr. `QC_TYPING_MS` (default 1500) stands in for the user typing
-/// while the backend warms up.
+/// answer on stderr. This is what the desktop-app mod runs. `QC_TYPING_MS` (default 0)
+/// stands in for the user typing while the backend warms up, to time the popup's early start.
 fn once(request: &str) -> Result<(String, u128), String> {
     let cwd = env::current_dir().ok().map(|p| p.display().to_string());
     let mut runner = Runner::new(config(), build_system(cwd.as_deref()))?;
-    let typing = env::var("QC_TYPING_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500);
+    let typing = env::var("QC_TYPING_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
     thread::sleep(Duration::from_millis(typing));
     let entered = Instant::now();
     let rx = runner.start(request)?;

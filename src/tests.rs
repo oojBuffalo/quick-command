@@ -129,10 +129,12 @@ fn paste_keeps_words_apart() {
 }
 
 #[test]
-fn workdir_is_never_a_shared_temp_directory() {
-    assert_eq!(workdir_path(Some("/s".into()), Some("/h".into())), Some(PathBuf::from("/s")));
-    assert_eq!(workdir_path(None, Some("/h".into())), Some(PathBuf::from("/h/.local/state/quick-command")));
-    assert_eq!(workdir_path(Some(String::new()), None), None);
+fn folders_come_from_herdr_or_the_home_directory_never_a_shared_temp_one() {
+    assert_eq!(dir_or_home(Some("/s".into()), Some("/h".into()), STATE_DIR), Some(PathBuf::from("/s")));
+    assert_eq!(dir_or_home(None, Some("/h".into()), STATE_DIR), Some(PathBuf::from("/h/.local/state/quick-command")));
+    // outside the `herdr` plugin host (the desktop app mod, --once) config.env has a home too
+    assert_eq!(dir_or_home(None, Some("/h".into()), CONFIG_DIR), Some(PathBuf::from("/h/.config/quick-command")));
+    assert_eq!(dir_or_home(Some(String::new()), None, STATE_DIR), None);
 }
 
 #[test]
