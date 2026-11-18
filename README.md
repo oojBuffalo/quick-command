@@ -11,7 +11,7 @@ Press the key, type `list git branches`, press Enter. `git branch -a` appears at
 
 ## Install
 
-Needs Herdr 0.9.5 or later, a Rust toolchain, and `curl`.
+Needs Herdr 0.9.5 or later, a Rust toolchain, and the `claude` CLI (or another backend, below; the HTTP backend needs `curl`).
 
 ```bash
 git clone <this repo> quick-command && cd quick-command
@@ -42,13 +42,13 @@ If your terminal cannot pass ⌘K through, pick another key, for example `key = 
 Settings live in `config.env` inside the folder printed by `herdr plugin config-dir ooj.quick-command`. Environment variables with the same names override the file.
 
 ```
-QC_BACKEND=claude
+QC_BACKEND=openrouter
 ```
 
 | `QC_BACKEND` | Uses | Notes |
 |---|---|---|
-| `openrouter` (default) | An API key, over HTTP | Fastest. Needs `OPENROUTER_API_KEY` or `QC_API_KEY`. Default model `anthropic/claude-haiku-5.5`. |
-| `claude` | Your Claude Code subscription | Default model `haiku`. |
+| `claude` (default) | Your Claude Code subscription | Default model `haiku`. Works with no setup if `claude` is logged in. |
+| `openrouter` | An API key, over HTTP | Fastest. Needs `OPENROUTER_API_KEY` or `QC_API_KEY`. Default model `anthropic/claude-haiku-5.5`. |
 | `codex` | Your ChatGPT/Codex subscription | |
 | `grok` | Your Grok subscription | |
 | `command` | Any program you name in `QC_COMMAND` | See below. |

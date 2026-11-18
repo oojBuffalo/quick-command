@@ -63,7 +63,7 @@ fn parse_env(text: &str) -> HashMap<String, String> {
 fn load_config(file: &HashMap<String, String>, env: &dyn Fn(&str) -> Option<String>) -> Config {
     let get = |k: &str| env(k).or_else(|| file.get(k).cloned()).filter(|v| !v.is_empty());
     Config {
-        backend: get("QC_BACKEND").unwrap_or_else(|| "openrouter".into()),
+        backend: get("QC_BACKEND").unwrap_or_else(|| "claude".into()),
         model: get("QC_MODEL"),
         command: get("QC_COMMAND"),
         base_url: get("QC_BASE_URL").unwrap_or_else(|| DEFAULT_BASE_URL.into()),

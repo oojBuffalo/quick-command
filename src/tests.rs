@@ -32,7 +32,7 @@ fn config_env_overrides_file_and_defaults() {
     assert_eq!(c.api_key.as_deref(), Some("filekey"));
     assert_eq!(c.base_url, DEFAULT_BASE_URL);
     let d = load_config(&HashMap::new(), &|_| None);
-    assert_eq!(d.backend, "openrouter");
+    assert_eq!(d.backend, "claude");
     assert!(d.api_key.is_none() && d.model.is_none());
 }
 
